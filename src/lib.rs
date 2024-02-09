@@ -161,10 +161,9 @@
 //!
 //! /// A Python module implemented in Rust.
 //! #[pymodule]
-//! fn string_sum(py: Python<'_>, m: &PyModule) -> PyResult<()> {
-//!     m.add_function(wrap_pyfunction!(sum_as_string, m)?)?;
-//!
-//!     Ok(())
+//! mod string_sum {
+//!     #[pyo3]
+//!     use crate::sum_as_string;
 //! }
 //! ```
 //!

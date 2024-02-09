@@ -60,7 +60,7 @@ impl PyCounter {
 }
 
 #[pymodule]
-pub fn decorator(_py: Python<'_>, module: &PyModule) -> PyResult<()> {
-    module.add_class::<PyCounter>()?;
-    Ok(())
+mod decorator {
+    #[pyo3]
+    use super::PyCounter;
 }

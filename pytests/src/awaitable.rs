@@ -79,8 +79,7 @@ impl FutureAwaitable {
 }
 
 #[pymodule]
-pub fn awaitable(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<IterAwaitable>()?;
-    m.add_class::<FutureAwaitable>()?;
-    Ok(())
+pub mod awaitable {
+    #[pyo3]
+    use super::{FutureAwaitable, IterAwaitable};
 }

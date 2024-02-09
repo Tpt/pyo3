@@ -327,9 +327,8 @@ impl Number {
 }
 
 #[pymodule]
-fn my_module(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<Number>()?;
-    Ok(())
+mod my_module {
+    use super::Number;
 }
 # const SCRIPT: &'static str = r#"
 # def hash_djb2(s: str):

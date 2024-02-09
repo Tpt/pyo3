@@ -2,8 +2,9 @@
 
 use pyo3::prelude::*;
 
-use pyo3::py_run;
+use pyo3::exceptions::PyException;
 use pyo3::types::{IntoPyDict, PyDict, PyTuple};
+use pyo3::{create_exception, py_run};
 
 #[path = "../src/tests/common.rs"]
 mod common;
@@ -463,5 +464,56 @@ fn test_module_doc_hidden() {
     Python::with_gil(|py| {
         let m = pyo3::wrap_pymodule!(my_module)(py);
         py_assert!(py, m, "m.__doc__ == ''");
+    })
+}
+
+create_exception!(
+    declarative_module,
+    MyError,
+    PyException,
+    "Some description."
+);
+
+/// A module written using declarative syntax.
+#[pymodule]
+mod declarative_module {
+    #[pyo3]
+    use super::module_with_functions;
+    #[pyo3]
+    #[cfg(not(Py_LIMITED_API))]
+    use super::LocatedClass;
+    use super::*;
+    #[pyo3]
+    use super::{double, MyError, ValueClass as Value};
+
+    #[pymodule_init]
+    fn init(m: &PyModule) -> PyResult<()> {
+        m.add("double2", m.getattr("double")?)
+    }
+}
+
+#[test]
+fn test_declarative_module() {
+    Python::with_gil(|py| {
+        let m = pyo3::wrap_pymodule!(declarative_module)(py).into_ref(py);
+        py_assert!(
+            py,
+            m,
+            "m.__doc__ == 'A module written using declarative syntax.'"
+        );
+
+        py_assert!(py, m, "m.double(2) == 4");
+        py_assert!(py, m, "m.double2(3) == 6");
+        py_assert!(py, m, "m.module_with_functions.no_parameters() == 42");
+        py_assert!(
+            py,
+            m,
+            "m.module_with_functions.double_value(m.ValueClass(1)) == 2"
+        );
+        py_assert!(py, m, "str(m.MyError('foo')) == 'foo'");
+        #[cfg(Py_LIMITED_API)]
+        py_assert!(py, m, "m.LocatedClass is None");
+        #[cfg(not(Py_LIMITED_API))]
+        py_assert!(py, m, "m.LocatedClass is not None");
     })
 }

@@ -157,10 +157,9 @@ macro_rules! import_exception {
 /// }
 ///
 /// #[pymodule]
-/// fn my_module(py: Python<'_>, m: &PyModule) -> PyResult<()> {
-///     m.add("MyError", py.get_type::<MyError>())?;
-///     m.add_function(wrap_pyfunction!(raise_myerror, py)?)?;
-///     Ok(())
+/// mod my_module {
+///     #[pyo3]
+///     use super::{MyError, raise_myerror};
 /// }
 /// # fn main() -> PyResult<()> {
 /// #     Python::with_gil(|py| -> PyResult<()> {

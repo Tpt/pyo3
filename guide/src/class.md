@@ -181,9 +181,9 @@ The next step is to create the module initializer and add our class to it:
 # struct Number(i32);
 #
 #[pymodule]
-fn my_module(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<Number>()?;
-    Ok(())
+mod my_module {
+  #[pyo3]
+  use super::Number;
 }
 ```
 

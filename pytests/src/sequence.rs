@@ -17,9 +17,7 @@ fn vec_to_vec_pystring(vec: Vec<&PyString>) -> Vec<&PyString> {
 }
 
 #[pymodule]
-pub fn sequence(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(vec_to_vec_i32, m)?)?;
-    m.add_function(wrap_pyfunction!(array_to_array_i32, m)?)?;
-    m.add_function(wrap_pyfunction!(vec_to_vec_pystring, m)?)?;
-    Ok(())
+pub mod sequence {
+    #[pyo3]
+    use super::{array_to_array_i32, vec_to_vec_i32, vec_to_vec_pystring};
 }

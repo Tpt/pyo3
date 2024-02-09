@@ -7,9 +7,9 @@ fn foo() -> usize {
 }
 
 #[pymodule]
-fn module_with_functions(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(foo, m)?).unwrap();
-    Ok(())
+mod module_with_functions {
+    #[pyo3]
+    use super::foo;
 }
 
 #[cfg(not(PyPy))]

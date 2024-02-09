@@ -18,7 +18,7 @@ impl Subclassable {
 }
 
 #[pymodule]
-pub fn subclassing(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<Subclassable>()?;
-    Ok(())
+pub mod subclassing {
+    #[pyo3]
+    use super::Subclassable;
 }

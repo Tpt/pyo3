@@ -63,7 +63,10 @@ impl ExampleContainer {
         match idx {
             IntOrSlice::Slice(slice) => {
                 let index = slice.indices(self.max_length as c_long).unwrap();
-                println!("Got a slice! {}-{}, step: {}, value: {}", index.start, index.stop, index.step, value);
+                println!(
+                    "Got a slice! {}-{}, step: {}, value: {}",
+                    index.start, index.stop, index.step, value
+                );
             }
             IntOrSlice::Int(index) => {
                 println!("Got an index! {} : value: {}", index, value);
@@ -75,8 +78,7 @@ impl ExampleContainer {
 
 #[pymodule]
 #[pyo3(name = "getitem")]
-fn example(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
-    // ? -https://github.com/PyO3/maturin/issues/475
-    m.add_class::<ExampleContainer>()?;
-    Ok(())
+mod example {
+    #[pyo3]
+    use super::ExampleContainer;
 }
