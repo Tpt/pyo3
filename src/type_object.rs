@@ -3,7 +3,7 @@
 use crate::ffi_ptr_ext::FfiPtrExt;
 use crate::types::any::PyAnyMethods;
 use crate::types::{PyAny, PyType};
-use crate::{ffi, Bound, PyNativeType, Python};
+use crate::{ffi, Bound, PyNativeType, PyResult, Python};
 
 /// `T: PyLayout<U>` represents that `T` is a concrete representation of `U` in the Python heap.
 /// E.g., `PyCell` is a concrete representation of all `pyclass`es, and `ffi::PyObject`
@@ -94,6 +94,12 @@ pub unsafe trait PyTypeInfo: Sized + HasPyGilRef {
                 .to_owned()
                 .downcast_into_unchecked()
         }
+    }
+
+    /// Returns the safe abstraction over the type object or an error if initialization fails
+    #[inline]
+    fn try_type_object_bound(py: Python<'_>) -> PyResult<Bound<'_, PyType>> {
+        Ok(Self::type_object_bound(py))
     }
 
     /// Checks if `object` is an instance of this type or a subclass of this type.

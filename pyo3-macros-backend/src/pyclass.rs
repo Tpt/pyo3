@@ -1290,6 +1290,16 @@ fn impl_pytypeinfo(
                     .get_or_init(py)
                     .as_type_ptr()
             }
+
+            #[inline]
+            fn try_type_object_bound(py: _pyo3::Python<'_>) -> _pyo3::PyResult<_pyo3::Bound<'_, _pyo3::types::PyType>> {
+                use ::std::borrow::ToOwned;
+                #deprecations
+
+                <#cls as _pyo3::impl_::pyclass::PyClassImpl>::lazy_type_object()
+                    .get_or_try_init(py)
+                    .map(|t| t.to_owned())
+            }
         }
     }
 }

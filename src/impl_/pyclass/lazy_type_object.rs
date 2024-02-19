@@ -54,7 +54,7 @@ impl<T: PyClass> LazyTypeObject<T> {
     }
 
     /// Fallible version of the above.
-    pub(crate) fn get_or_try_init<'py>(&self, py: Python<'py>) -> PyResult<&Bound<'py, PyType>> {
+    pub fn get_or_try_init<'py>(&self, py: Python<'py>) -> PyResult<&Bound<'py, PyType>> {
         self.0
             .get_or_try_init(py, create_type_object::<T>, T::NAME, T::items_iter())
     }

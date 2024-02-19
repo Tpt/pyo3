@@ -143,7 +143,7 @@ pub trait PyAddToModule {
 
 impl<T: PyTypeInfo> PyAddToModule for T {
     fn add_to_module(module: &Bound<'_, PyModule>) -> PyResult<()> {
-        module.add(Self::NAME, Self::type_object_bound(module.py()))
+        module.add(Self::NAME, Self::try_type_object_bound(module.py())?)
     }
 }
 
