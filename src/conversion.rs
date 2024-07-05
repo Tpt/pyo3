@@ -223,6 +223,9 @@ pub trait IntoPy<T>: Sized {
 /// infinite recursion, implementors must implement at least one of these methods. The recommendation
 /// is to implement `extract_bound` and leave `extract` as the default implementation.
 pub trait FromPyObject<'py>: Sized {
+    #[cfg(feature = "experimental-inspect")]
+    const INPUT_TYPE: &'static str = "typing.Any";
+
     /// Extracts `Self` from the source GIL Ref `obj`.
     ///
     /// Implementors are encouraged to implement `extract_bound` and leave this method as the
@@ -297,6 +300,9 @@ mod from_py_object_bound_sealed {
 /// Similarly, users should typically not call these trait methods and should instead
 /// use this via the `extract` method on `Bound` and `Py`.
 pub trait FromPyObjectBound<'a, 'py>: Sized + from_py_object_bound_sealed::Sealed {
+    #[cfg(feature = "experimental-inspect")]
+    const INPUT_TYPE: &'static str = "typing.Any";
+
     /// Extracts `Self` from the bound smart pointer `obj`.
     ///
     /// Users are advised against calling this method directly: instead, use this via
@@ -320,6 +326,9 @@ impl<'py, T> FromPyObjectBound<'_, 'py> for T
 where
     T: FromPyObject<'py>,
 {
+    #[cfg(feature = "experimental-inspect")]
+    const INPUT_TYPE: &'static str = T::INPUT_TYPE;
+
     fn from_py_object_bound(ob: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
         Self::extract_bound(&ob)
     }

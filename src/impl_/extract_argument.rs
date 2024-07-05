@@ -22,6 +22,7 @@ type PyArg<'py> = Borrowed<'py, 'py, PyAny>;
 /// There exists a trivial blanket implementation for `T: FromPyObject` with `Holder = ()`.
 pub trait PyFunctionArgument<'a, 'py>: Sized + 'a {
     type Holder: FunctionArgumentHolder;
+    const INPUT_TYPE: &'static str;
     fn extract(obj: &'a Bound<'py, PyAny>, holder: &'a mut Self::Holder) -> PyResult<Self>;
 }
 
@@ -30,6 +31,8 @@ where
     T: FromPyObjectBound<'a, 'py> + 'a,
 {
     type Holder = ();
+
+    const INPUT_TYPE: &'static str = T::INPUT_TYPE;
 
     #[inline]
     fn extract(obj: &'a Bound<'py, PyAny>, _: &'a mut ()) -> PyResult<Self> {
@@ -43,6 +46,8 @@ where
 {
     type Holder = Option<()>;
 
+    const INPUT_TYPE: &'static str = "typing.Any";
+
     #[inline]
     fn extract(obj: &'a Bound<'py, PyAny>, _: &'a mut Option<()>) -> PyResult<Self> {
         obj.downcast().map_err(Into::into)
@@ -54,6 +59,7 @@ where
     T: PyTypeCheck,
 {
     type Holder = ();
+    const INPUT_TYPE: &'static str = "typing.Any";
 
     #[inline]
     fn extract(obj: &'a Bound<'py, PyAny>, _: &'a mut ()) -> PyResult<Self> {
@@ -68,6 +74,8 @@ where
 #[cfg(all(Py_LIMITED_API, not(any(feature = "gil-refs", Py_3_10))))]
 impl<'a> PyFunctionArgument<'a, '_> for &'a str {
     type Holder = Option<std::borrow::Cow<'a, str>>;
+
+    const INPUT_TYPE: &'static str = "str";
 
     #[inline]
     fn extract(

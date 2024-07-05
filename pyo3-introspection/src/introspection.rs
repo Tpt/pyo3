@@ -1,4 +1,5 @@
-use crate::model::{Class, Function, Module};
+use crate::model::{Class, Function, Module, ParameterKind};
+use crate::model::{Parameter, Signature};
 use anyhow::{bail, Context, Result};
 use goblin::elf::Elf;
 use goblin::mach::{Mach, MachO, SingleArch};
@@ -67,7 +68,37 @@ fn parse_module(
                     modules.push(parse_module(name, members, chunks_by_id)?);
                 }
                 Chunk::Class { name, id: _ } => classes.push(Class { name: name.into() }),
-                Chunk::Function { name, id: _ } => functions.push(Function { name: name.into() }),
+                Chunk::Function {
+                    name,
+                    id: _,
+                    signature,
+                } => functions.push(Function {
+                    name: name.into(),
+                    signature: Signature {
+                        parameters: signature
+                            .parameters
+                            .iter()
+                            .map(|parameter| Parameter {
+                                name: parameter.name.clone(),
+                                kind: match parameter.kind {
+                                    ChunkParameterKind::PositionalOnly => {
+                                        ParameterKind::PositionalOnly
+                                    }
+                                    ChunkParameterKind::PositionalOrKeyword => {
+                                        ParameterKind::PositionalOrKeyword
+                                    }
+                                    ChunkParameterKind::VarPositional => {
+                                        ParameterKind::VarPositional
+                                    }
+                                    ChunkParameterKind::KeywordOnly => ParameterKind::KeywordOnly,
+                                    ChunkParameterKind::VarKeyword => ParameterKind::VarKeyword,
+                                },
+                                has_default: parameter.has_default,
+                                annotation: parameter.annotation.clone(),
+                            })
+                            .collect(),
+                    },
+                }),
             }
         }
     }
@@ -239,5 +270,31 @@ enum Chunk {
     Function {
         id: String,
         name: String,
+        signature: ChunkSignature,
     },
+}
+
+#[derive(Deserialize)]
+struct ChunkSignature {
+    parameters: Vec<ChunkParameter>,
+}
+
+#[derive(Deserialize)]
+struct ChunkParameter {
+    name: String,
+    kind: ChunkParameterKind,
+    #[serde(default)]
+    has_default: bool,
+    #[serde(default)]
+    annotation: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+enum ChunkParameterKind {
+    PositionalOnly,
+    PositionalOrKeyword,
+    VarPositional,
+    KeywordOnly,
+    VarKeyword,
 }

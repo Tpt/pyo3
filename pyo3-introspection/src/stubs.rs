@@ -1,4 +1,4 @@
-use crate::model::{Class, Function, Module};
+use crate::model::{Class, Function, Module, ParameterKind};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -48,5 +48,40 @@ fn class_stubs(class: &Class) -> String {
 }
 
 fn function_stubs(function: &Function) -> String {
-    format!("def {}(*args, **kwargs): ...", function.name)
+    // Signature
+    let mut positional_only = true;
+    let mut keyword_only = false;
+    let mut parameters = Vec::new();
+    for parameter in &function.signature.parameters {
+        if positional_only && !matches!(parameter.kind, ParameterKind::PositionalOnly) {
+            if !parameters.is_empty() {
+                parameters.push("/".into());
+            }
+            positional_only = false;
+        }
+        if !keyword_only && matches!(parameter.kind, ParameterKind::KeywordOnly) {
+            parameters.push("*".into());
+            keyword_only = true;
+        }
+        parameters.push(match parameter.kind {
+            ParameterKind::VarPositional => {
+                keyword_only = true;
+                format!("*{}", parameter.name)
+            }
+            ParameterKind::VarKeyword => format!("**{}", parameter.name),
+            _ => {
+                let mut s = parameter.name.clone();
+                if let Some(annotation) = &parameter.annotation {
+                    s.push_str(": ");
+                    s.push_str(annotation);
+                }
+                if parameter.has_default {
+                    s.push_str(" = ...");
+                }
+                s
+            }
+        });
+    }
+
+    format!("def {}({}): ...", function.name, parameters.join(", "))
 }
