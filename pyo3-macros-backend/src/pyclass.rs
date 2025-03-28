@@ -15,7 +15,7 @@ use crate::attributes::{
     StrFormatterAttribute,
 };
 #[cfg(feature = "experimental-inspect")]
-use crate::introspection::class_introspection_code;
+use crate::introspection::{class_introspection_code, introspection_id_const};
 use crate::konst::{ConstAttributes, ConstSpec};
 use crate::method::{FnArg, FnSpec, PyArg, RegularArg};
 use crate::pyfunction::ConstructorAttribute;
@@ -2098,11 +2098,26 @@ impl<'a> PyClassImplsBuilder<'a> {
     fn impl_extractext(&self, ctx: &Ctx) -> TokenStream {
         let Ctx { pyo3_path, .. } = ctx;
         let cls = self.cls;
+
+        let input_type = if cfg!(feature = "experimental-inspect") {
+            let cls_name = get_class_python_name(cls, self.attr).to_string();
+            let full_name = if let Some(ModuleAttribute { value, .. }) = &self.attr.options.module {
+                let value = value.value();
+                format!("{value}.{cls_name}")
+            } else {
+                cls_name
+            };
+            quote! { const INPUT_TYPE: &'static str = #full_name; }
+        } else {
+            quote! {}
+        };
         if self.attr.options.frozen.is_some() {
             quote! {
                 impl<'a, 'py> #pyo3_path::impl_::extract_argument::PyFunctionArgument<'a, 'py> for &'a #cls
                 {
                     type Holder = ::std::option::Option<#pyo3_path::PyRef<'py, #cls>>;
+
+                    #input_type
 
                     #[inline]
                     fn extract(obj: &'a #pyo3_path::Bound<'py, #pyo3_path::PyAny>, holder: &'a mut Self::Holder) -> #pyo3_path::PyResult<Self> {
@@ -2116,6 +2131,8 @@ impl<'a> PyClassImplsBuilder<'a> {
                 {
                     type Holder = ::std::option::Option<#pyo3_path::PyRef<'py, #cls>>;
 
+                    #input_type
+
                     #[inline]
                     fn extract(obj: &'a #pyo3_path::Bound<'py, #pyo3_path::PyAny>, holder: &'a mut Self::Holder) -> #pyo3_path::PyResult<Self> {
                         #pyo3_path::impl_::extract_argument::extract_pyclass_ref(obj, holder)
@@ -2125,6 +2142,8 @@ impl<'a> PyClassImplsBuilder<'a> {
                 impl<'a, 'py> #pyo3_path::impl_::extract_argument::PyFunctionArgument<'a, 'py> for &'a mut #cls
                 {
                     type Holder = ::std::option::Option<#pyo3_path::PyRefMut<'py, #cls>>;
+
+                    #input_type
 
                     #[inline]
                     fn extract(obj: &'a #pyo3_path::Bound<'py, #pyo3_path::PyAny>, holder: &'a mut Self::Holder) -> #pyo3_path::PyResult<Self> {
@@ -2424,7 +2443,15 @@ impl<'a> PyClassImplsBuilder<'a> {
     fn impl_introspection(&self, ctx: &Ctx) -> TokenStream {
         let Ctx { pyo3_path, .. } = ctx;
         let name = get_class_python_name(self.cls, self.attr).to_string();
-        class_introspection_code(pyo3_path, self.cls, &name)
+        let ident = self.cls;
+        let static_introspection = class_introspection_code(pyo3_path, ident, &name);
+        let introspection_id = introspection_id_const();
+        quote! {
+            #static_introspection
+            impl #ident {
+                #introspection_id
+            }
+        }
     }
 
     #[cfg(not(feature = "experimental-inspect"))]

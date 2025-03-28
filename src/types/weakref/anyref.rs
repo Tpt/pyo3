@@ -21,6 +21,8 @@ pyobject_native_type_named!(PyWeakref);
 
 impl PyTypeCheck for PyWeakref {
     const NAME: &'static str = "weakref";
+    #[cfg(feature = "experimental-inspect")]
+    const PYTHON_TYPE: &'static str = " weakref.ReferenceType";
 
     fn type_check(object: &Bound<'_, PyAny>) -> bool {
         unsafe { ffi::PyWeakref_Check(object.as_ptr()) > 0 }
