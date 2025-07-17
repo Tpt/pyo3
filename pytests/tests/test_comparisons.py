@@ -8,6 +8,7 @@ from pyo3_pytests.comparisons import (
     EqDerived,
     Ordered,
     OrderedDefaultNe,
+    OrderedRichCmp,
 )
 from typing_extensions import Self
 
@@ -33,7 +34,7 @@ class PyEq:
     sys.implementation.name == "graalpy"
     and __graalpython__.get_graalvm_version().startswith("24.1"),  # noqa: F821
     reason="Bug in GraalPy 24.1",
-)
+    )
 @pytest.mark.parametrize(
     "ty", (Eq, EqDerived, PyEq), ids=("rust", "rust-derived", "python")
 )
@@ -132,8 +133,10 @@ class PyOrdered:
         return self.x >= other.x
 
 
-@pytest.mark.parametrize("ty", (Ordered, PyOrdered), ids=("rust", "python"))
-def test_ordered(ty: Type[Union[Ordered, PyOrdered]]):
+@pytest.mark.parametrize(
+    "ty", (Ordered, OrderedRichCmp, PyOrdered), ids=("rust", "rust-richcmp", "python")
+)
+def test_ordered(ty: Type[Union[Ordered, OrderedRichCmp, PyOrdered]]):
     a = ty(0)
     b = ty(0)
     c = ty(1)
