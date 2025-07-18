@@ -97,6 +97,18 @@ impl OrderedRichCmp {
     }
 }
 
+#[pyclass(eq, ord)]
+#[derive(PartialEq, Eq, Ord, PartialOrd)]
+struct OrderedDerived(i64);
+
+#[pymethods]
+impl OrderedDerived {
+    #[new]
+    fn new(value: i64) -> Self {
+        Self(value)
+    }
+}
+
 #[pyclass]
 struct OrderedDefaultNe(i64);
 
@@ -133,5 +145,7 @@ impl OrderedDefaultNe {
 #[pymodule(gil_used = false)]
 pub mod comparisons {
     #[pymodule_export]
-    use super::{Eq, EqDefaultNe, EqDerived, Ordered, OrderedDefaultNe, OrderedRichCmp};
+    use super::{
+        Eq, EqDefaultNe, EqDerived, Ordered, OrderedDefaultNe, OrderedDerived, OrderedRichCmp,
+    };
 }

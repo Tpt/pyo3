@@ -6,7 +6,9 @@ use quote::{format_ident, quote, quote_spanned, ToTokens};
 use syn::ext::IdentExt;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
-use syn::{parse_quote, parse_quote_spanned, spanned::Spanned, ImplItemFn, Result, Token};
+use syn::{
+    parse_quote, parse_quote_spanned, spanned::Spanned, ImplItemFn, Result, ReturnType, Token,
+};
 
 use crate::attributes::kw::frozen;
 use crate::attributes::{
@@ -15,10 +17,13 @@ use crate::attributes::{
     StrFormatterAttribute,
 };
 #[cfg(feature = "experimental-inspect")]
-use crate::introspection::{class_introspection_code, introspection_id_const};
+use crate::introspection::{
+    class_introspection_code, function_introspection_code, introspection_id_const,
+    unique_element_id,
+};
 use crate::konst::{ConstAttributes, ConstSpec};
 use crate::method::{FnArg, FnSpec, PyArg, RegularArg};
-use crate::pyfunction::ConstructorAttribute;
+use crate::pyfunction::{ConstructorAttribute, FunctionSignature};
 use crate::pyimpl::{gen_py_const, get_cfg_attributes, PyClassMethodsType};
 use crate::pymethod::{
     impl_py_class_attribute, impl_py_getter_def, impl_py_setter_def, MethodAndMethodDef,
@@ -855,7 +860,20 @@ fn implement_py_formatting(
             fmt_impl
         }
     };
-    let fmt_slot = generate_protocol_slot(ty, &mut fmt_impl, &__STR__, "__str__", ctx).unwrap();
+    let fmt_slot = generate_protocol_slot(
+        ty,
+        &mut fmt_impl,
+        &__STR__,
+        "__str__",
+        #[cfg(feature = "experimental-inspect")]
+        &["__str__"],
+        #[cfg(feature = "experimental-inspect")]
+        Vec::new(),
+        #[cfg(feature = "experimental-inspect")]
+        parse_quote! { ::std::string::String },
+        ctx,
+    )
+    .unwrap();
     (fmt_impl, fmt_slot)
 }
 
@@ -931,8 +949,7 @@ fn impl_simple_enum(
                 }
             }
         };
-        let repr_slot =
-            generate_default_protocol_slot(&ty, &mut repr_impl, &__REPR__, ctx).unwrap();
+        let repr_slot = generate_default_protocol_slot(&ty, &mut repr_impl, &__REPR__, ctx)?;
         (repr_impl, repr_slot)
     };
 
@@ -954,7 +971,7 @@ fn impl_simple_enum(
                 }
             }
         };
-        let int_slot = generate_default_protocol_slot(&ty, &mut int_impl, &__INT__, ctx).unwrap();
+        let int_slot = generate_default_protocol_slot(&ty, &mut int_impl, &__INT__, ctx)?;
         (int_impl, int_slot)
     };
 
@@ -1466,15 +1483,48 @@ fn generate_protocol_slot(
     method: &mut syn::ImplItemFn,
     slot: &SlotDef,
     name: &str,
+    #[cfg(feature = "experimental-inspect")] introspection_names: &[&str],
+    #[cfg(feature = "experimental-inspect")] introspection_arguments: Vec<FnArg<'_>>,
+    #[cfg(feature = "experimental-inspect")] introspection_return: syn::Type,
     ctx: &Ctx,
 ) -> syn::Result<MethodAndSlotDef> {
     let spec = FnSpec::parse(
         &mut method.sig,
         &mut Vec::new(),
         PyFunctionOptions::default(),
-    )
-    .unwrap();
-    slot.generate_type_slot(&syn::parse_quote!(#cls), &spec, name, ctx)
+    )?;
+    let mut def = slot.generate_type_slot(&syn::parse_quote!(#cls), &spec, name, ctx)?;
+    #[cfg(feature = "experimental-inspect")]
+    {
+        let associated_method = def.associated_method;
+        let signature = FunctionSignature::from_arguments(introspection_arguments.clone());
+        let introspection = introspection_names
+            .iter()
+            .map(|name| {
+                function_introspection_code(
+                    &ctx.pyo3_path,
+                    None,
+                    name,
+                    &signature,
+                    Some("self"),
+                    ReturnType::Type(
+                        Token![->](cls.span()),
+                        Box::new(introspection_return.clone()),
+                    ),
+                    [],
+                    Some(cls),
+                )
+            })
+            .collect::<Vec<_>>();
+        let const_name = format_ident!("_{}", unique_element_id()); // We need an explicit name here
+        def.associated_method = quote! {
+            #associated_method
+            const #const_name: () = {
+                #(#introspection)*
+            };
+        };
+    }
+    Ok(def)
 }
 
 fn generate_default_protocol_slot(
@@ -1487,8 +1537,7 @@ fn generate_default_protocol_slot(
         &mut method.sig,
         &mut Vec::new(),
         PyFunctionOptions::default(),
-    )
-    .unwrap();
+    )?;
     let name = spec.name.to_string();
     slot.generate_type_slot(
         &syn::parse_quote!(#cls),
@@ -1959,9 +2008,46 @@ fn pyclass_richcmp_simple_enum(
         }
     };
     let richcmp_slot = if options.eq.is_some() {
-        generate_protocol_slot(cls, &mut richcmp_impl, &__RICHCMP__, "__richcmp__", ctx).unwrap()
+        generate_protocol_slot(
+            cls,
+            &mut richcmp_impl,
+            &__RICHCMP__,
+            "__richcmp__",
+            #[cfg(feature = "experimental-inspect")]
+            &["__eq__", "__ne__"],
+            #[cfg(feature = "experimental-inspect")]
+            vec![FnArg::Regular(RegularArg {
+                name: Cow::Owned(format_ident!("other")),
+                ty: &match (options.eq.is_some(), options.eq_int.is_some()) {
+                    (true, true) => {
+                        // TODO properly return an union
+                        let pyo3_path = &ctx.pyo3_path;
+                        parse_quote! { #pyo3_path::PyObject }
+                    }
+                    (true, false) => syn::TypeReference {
+                        and_token: Token![&](cls.span()),
+                        lifetime: None,
+                        mutability: None,
+                        elem: Box::new(cls.clone()),
+                    }
+                    .into(),
+                    (false, true) => syn::TypePath {
+                        path: repr_type.clone().into(),
+                        qself: None,
+                    }
+                    .into(),
+                    (false, false) => unreachable!(),
+                },
+                from_py_with: None,
+                default_value: None,
+                option_wrapped_type: None,
+            })],
+            #[cfg(feature = "experimental-inspect")]
+            parse_quote! { ::std::primitive::bool },
+            ctx,
+        )?
     } else {
-        generate_default_protocol_slot(cls, &mut richcmp_impl, &__RICHCMP__, ctx).unwrap()
+        generate_default_protocol_slot(cls, &mut richcmp_impl, &__RICHCMP__, ctx)?
     };
     Ok((Some(richcmp_impl), Some(richcmp_slot)))
 }
@@ -1996,9 +2082,34 @@ fn pyclass_richcmp(
                 }
             }
         };
-        let richcmp_slot =
-            generate_protocol_slot(cls, &mut richcmp_impl, &__RICHCMP__, "__richcmp__", ctx)
-                .unwrap();
+        let richcmp_slot = generate_protocol_slot(
+            cls,
+            &mut richcmp_impl,
+            &__RICHCMP__,
+            "__richcmp__",
+            #[cfg(feature = "experimental-inspect")]
+            if options.ord.is_some() {
+                &["__eq__", "__ne__", "__lt__", "__le__", "__gt__", "__ge__"]
+            } else {
+                &["__eq__", "__ne__"]
+            },
+            #[cfg(feature = "experimental-inspect")]
+            vec![FnArg::Regular(RegularArg {
+                name: Cow::Owned(format_ident!("other")),
+                ty: &syn::Type::Reference(syn::TypeReference {
+                    and_token: Token![&](cls.span()),
+                    lifetime: None,
+                    mutability: None,
+                    elem: Box::new(cls.clone()),
+                }),
+                from_py_with: None,
+                default_value: None,
+                option_wrapped_type: None,
+            })],
+            #[cfg(feature = "experimental-inspect")]
+            parse_quote! { ::std::primitive::bool },
+            ctx,
+        )?;
         Ok((Some(richcmp_impl), Some(richcmp_slot)))
     } else {
         Ok((None, None))
@@ -2025,8 +2136,19 @@ fn pyclass_hash(
                     ::std::hash::Hasher::finish(&s)
                 }
             };
-            let hash_slot =
-                generate_protocol_slot(cls, &mut hash_impl, &__HASH__, "__hash__", ctx).unwrap();
+            let hash_slot = generate_protocol_slot(
+                cls,
+                &mut hash_impl,
+                &__HASH__,
+                "__hash__",
+                #[cfg(feature = "experimental-inspect")]
+                &["__hash__"],
+                #[cfg(feature = "experimental-inspect")]
+                Vec::new(),
+                #[cfg(feature = "experimental-inspect")]
+                parse_quote! { ::std::primitive::u64 },
+                ctx,
+            )?;
             Ok((Some(hash_impl), Some(hash_slot)))
         }
         None => Ok((None, None)),
@@ -2439,7 +2561,7 @@ impl<'a> PyClassImplsBuilder<'a> {
         let cls = self.cls;
         let Ctx { pyo3_path, .. } = ctx;
 
-        self.attr.options.freelist.as_ref().map_or(quote!{}, |freelist| {
+        self.attr.options.freelist.as_ref().map_or(quote! {}, |freelist| {
             let freelist = &freelist.value;
             quote! {
                 impl #pyo3_path::impl_::pyclass::PyClassWithFreeList for #cls {
