@@ -256,7 +256,7 @@ pub fn build_py_class(
     args.options.take_pyo3_options(&mut class.attrs)?;
 
     let ctx = &Ctx::new(&args.options.krate, None);
-    let doc = utils::get_doc(&class.attrs, None, ctx)?;
+    let doc = utils::get_doc(&class.attrs, None);
 
     if let Some(lt) = class.generics.lifetimes().next() {
         bail_spanned!(
@@ -537,7 +537,7 @@ pub fn build_py_enum(
         bail_spanned!(generic.span() => "enums do not support #[pyclass(generic)]");
     }
 
-    let doc = utils::get_doc(&enum_.attrs, None, ctx)?;
+    let doc = utils::get_doc(&enum_.attrs, None);
     let enum_ = PyClassEnum::new(enum_)?;
     impl_enum(enum_, &args, doc, method_type, ctx)
 }
@@ -1826,13 +1826,13 @@ fn complex_enum_variant_field_getter<'a>(
         output: parse_quote!(-> #variant_cls_type),
     };
 
-    let property_type = crate::pymethod::PropertyType::Function {
+    let property_type = PropertyType::Function {
         self_type: &self_type,
         spec: &spec,
-        doc: crate::get_doc(&[], None, ctx)?,
+        doc: crate::get_doc(&[], None),
     };
 
-    let getter = crate::pymethod::impl_py_getter_def(variant_cls_type, property_type, ctx)?;
+    let getter = impl_py_getter_def(variant_cls_type, property_type, ctx)?;
     Ok(getter)
 }
 
@@ -2241,7 +2241,7 @@ fn pyclass_class_geitem(
             let class_geitem_method = crate::pymethod::impl_py_method_def(
                 cls,
                 &spec,
-                &spec.get_doc(&class_geitem_impl.attrs, ctx)?,
+                &spec.get_doc(&class_geitem_impl.attrs),
                 Some(quote!(#pyo3_path::ffi::METH_CLASS)),
                 ctx,
             )?;
@@ -2354,9 +2354,9 @@ impl<'a> PyClassImplsBuilder<'a> {
     fn impl_pyclassimpl(&self, ctx: &Ctx) -> Result<TokenStream> {
         let Ctx { pyo3_path, .. } = ctx;
         let cls = self.cls;
-        let doc = self.doc.as_ref().map_or(
-            LitCStr::empty(ctx).to_token_stream(),
-            PythonDoc::to_token_stream,
+        let doc = self.doc.as_ref().map_or_else(
+            || LitCStr::empty(ctx).to_token_stream(),
+            |doc| doc.to_cstr_stream(ctx),
         );
         let is_basetype = self.attr.options.subclass.is_some();
         let base = match &self.attr.options.extends {

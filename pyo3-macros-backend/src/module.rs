@@ -115,7 +115,7 @@ pub fn pymodule_module_impl(
     options.take_pyo3_options(attrs)?;
     let ctx = &Ctx::new(&options.krate, None);
     let Ctx { pyo3_path, .. } = ctx;
-    let doc = get_doc(attrs, None, ctx)?;
+    let doc = get_doc(attrs, None);
     let name = options
         .name
         .map_or_else(|| ident.unraw(), |name| name.value.0);
@@ -388,6 +388,7 @@ pub fn pymodule_module_impl(
     #[cfg(not(feature = "experimental-inspect"))]
     let introspection_id = quote! {};
 
+    let doc = doc.to_cstr_stream(ctx);
     let module_def = quote! {{
         use #pyo3_path::impl_::pymodule as impl_;
         const INITIALIZER: impl_::ModuleInitializer = impl_::ModuleInitializer(__pyo3_pymodule);
@@ -453,7 +454,7 @@ pub fn pymodule_function_impl(
         .name
         .map_or_else(|| ident.unraw(), |name| name.value.0);
     let vis = &function.vis;
-    let doc = get_doc(&function.attrs, None, ctx)?;
+    let doc = get_doc(&function.attrs, None);
 
     let initialization = module_initialization(
         &name,
@@ -481,6 +482,7 @@ pub fn pymodule_function_impl(
     module_args
         .push(quote!(::std::convert::Into::into(#pyo3_path::impl_::pymethods::BoundRef(module))));
 
+    let doc = doc.to_cstr_stream(ctx);
     Ok(quote! {
         #[doc(hidden)]
         #vis mod #ident {

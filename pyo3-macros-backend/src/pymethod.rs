@@ -262,21 +262,21 @@ pub fn gen_py_method(
         (_, FnType::Fn(_)) => GeneratedPyMethod::Method(impl_py_method_def(
             cls,
             spec,
-            &spec.get_doc(meth_attrs, ctx)?,
+            &spec.get_doc(meth_attrs),
             None,
             ctx,
         )?),
         (_, FnType::FnClass(_)) => GeneratedPyMethod::Method(impl_py_method_def(
             cls,
             spec,
-            &spec.get_doc(meth_attrs, ctx)?,
+            &spec.get_doc(meth_attrs),
             Some(quote!(#pyo3_path::ffi::METH_CLASS)),
             ctx,
         )?),
         (_, FnType::FnStatic) => GeneratedPyMethod::Method(impl_py_method_def(
             cls,
             spec,
-            &spec.get_doc(meth_attrs, ctx)?,
+            &spec.get_doc(meth_attrs),
             Some(quote!(#pyo3_path::ffi::METH_STATIC)),
             ctx,
         )?),
@@ -290,7 +290,7 @@ pub fn gen_py_method(
             PropertyType::Function {
                 self_type,
                 spec,
-                doc: spec.get_doc(meth_attrs, ctx)?,
+                doc: spec.get_doc(meth_attrs),
             },
             ctx,
         )?),
@@ -299,7 +299,7 @@ pub fn gen_py_method(
             PropertyType::Function {
                 self_type,
                 spec,
-                doc: spec.get_doc(meth_attrs, ctx)?,
+                doc: spec.get_doc(meth_attrs),
             },
             ctx,
         )?),
@@ -652,7 +652,7 @@ pub fn impl_py_setter_def(
 ) -> Result<MethodAndMethodDef> {
     let Ctx { pyo3_path, .. } = ctx;
     let python_name = property_type.null_terminated_python_name(ctx)?;
-    let doc = property_type.doc(ctx)?;
+    let doc = property_type.doc();
     let mut holders = Holders::new();
     let setter_impl = match property_type {
         PropertyType::Descriptor {
@@ -785,6 +785,7 @@ pub fn impl_py_setter_def(
         }
     };
 
+    let doc = doc.to_cstr_stream(ctx);
     let method_def = quote! {
         #cfg_attrs
         #pyo3_path::impl_::pyclass::MaybeRuntimePyMethodDef::Static(
@@ -836,7 +837,7 @@ pub fn impl_py_getter_def(
 ) -> Result<MethodAndMethodDef> {
     let Ctx { pyo3_path, .. } = ctx;
     let python_name = property_type.null_terminated_python_name(ctx)?;
-    let doc = property_type.doc(ctx)?;
+    let doc = property_type.doc();
 
     let mut cfg_attrs = TokenStream::new();
     if let PropertyType::Descriptor { field, .. } = &property_type {
@@ -860,6 +861,7 @@ pub fn impl_py_getter_def(
             } else {
                 syn::Index::from(field_index).to_token_stream()
             };
+            let doc = doc.to_cstr_stream(ctx);
 
             // TODO: on MSRV 1.77+, we can use `::std::mem::offset_of!` here, and it should
             // make it possible for the `MaybeRuntimePyMethodDef` to be a `Static` variant.
@@ -927,6 +929,7 @@ pub fn impl_py_getter_def(
                 }
             };
 
+            let doc = doc.to_cstr_stream(ctx);
             let method_def = quote! {
                 #cfg_attrs
                 #pyo3_path::impl_::pyclass::MaybeRuntimePyMethodDef::Static(
@@ -987,12 +990,12 @@ impl PropertyType<'_> {
         }
     }
 
-    fn doc(&self, ctx: &Ctx) -> Result<Cow<'_, PythonDoc>> {
+    fn doc(&self) -> Cow<'_, PythonDoc> {
         match self {
             PropertyType::Descriptor { field, .. } => {
-                utils::get_doc(&field.attrs, None, ctx).map(Cow::Owned)
+                Cow::Owned(utils::get_doc(&field.attrs, None))
             }
-            PropertyType::Function { doc, .. } => Ok(Cow::Borrowed(doc)),
+            PropertyType::Function { doc, .. } => Cow::Borrowed(doc),
         }
     }
 }

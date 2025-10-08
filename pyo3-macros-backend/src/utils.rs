@@ -2,8 +2,9 @@ use crate::attributes::{CrateAttribute, RenamingRule};
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned, ToTokens};
 use std::ffi::CString;
+use std::mem::take;
 use syn::spanned::Spanned;
-use syn::{punctuated::Punctuated, Token};
+use syn::{Expr, ExprLit, Lit};
 
 /// Macro inspired by `anyhow::anyhow!` to create a compiler error with the given span.
 macro_rules! err_spanned {
@@ -94,14 +95,14 @@ impl LitCStr {
     }
 }
 
-impl quote::ToTokens for LitCStr {
+impl ToTokens for LitCStr {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         if cfg!(c_str_lit) {
             syn::LitCStr::new(&self.lit, self.span).to_tokens(tokens);
         } else {
             let pyo3_path = &self.pyo3_path;
             let lit = self.lit.to_str().unwrap();
-            tokens.extend(quote::quote_spanned!(self.span => #pyo3_path::ffi::c_str!(#lit)));
+            tokens.extend(quote_spanned!(self.span => #pyo3_path::ffi::c_str!(#lit)));
         }
     }
 }
@@ -112,14 +113,15 @@ impl quote::ToTokens for LitCStr {
 /// expressions then the tokens will be a concat!("...", "\n", "\0") expression of the strings and
 /// macro parts. contents such as parse the string contents.
 #[derive(Clone)]
-pub struct PythonDoc(PythonDocKind);
+pub struct PythonDoc {
+    parts: Vec<StrOrExpr>,
+}
 
+/// A plain string or an expression
 #[derive(Clone)]
-enum PythonDocKind {
-    LitCStr(LitCStr),
-    // There is currently no way to `concat!` c-string literals, we fallback to the `c_str!` macro in
-    // this case.
-    Tokens(TokenStream),
+enum StrOrExpr {
+    Str(String),
+    Expr(Expr),
 }
 
 /// Collects all #[doc = "..."] attributes into a TokenStream evaluating to a null-terminated string.
@@ -127,19 +129,14 @@ enum PythonDocKind {
 /// If this doc is for a callable, the provided `text_signature` can be passed to prepend
 /// this to the documentation suitable for Python to extract this into the `__text_signature__`
 /// attribute.
-pub fn get_doc(
-    attrs: &[syn::Attribute],
-    mut text_signature: Option<String>,
-    ctx: &Ctx,
-) -> syn::Result<PythonDoc> {
-    let Ctx { pyo3_path, .. } = ctx;
+pub fn get_doc(attrs: &[syn::Attribute], mut text_signature: Option<String>) -> PythonDoc {
     // insert special divider between `__text_signature__` and doc
     // (assume text_signature is itself well-formed)
     if let Some(text_signature) = &mut text_signature {
         text_signature.push_str("\n--\n\n");
     }
 
-    let mut parts = Punctuated::<TokenStream, Token![,]>::new();
+    let mut parts = Vec::new();
     let mut first = true;
     let mut current_part = text_signature.unwrap_or_default();
     let mut current_part_span = None;
@@ -156,70 +153,51 @@ pub fn get_doc(
                 } else {
                     first = false;
                 }
-                if let syn::Expr::Lit(syn::ExprLit {
-                    lit: syn::Lit::Str(lit_str),
+                if let Expr::Lit(ExprLit {
+                    lit: Lit::Str(lit_str),
                     ..
                 }) = &nv.value
                 {
                     // Strip single left space from literal strings, if needed.
-                    // e.g. `/// Hello world` expands to #[doc = " Hello world"]
+                    // e.g. `/// Hello world` expands to #[doc = "Hello world"]
                     let doc_line = lit_str.value();
                     current_part.push_str(doc_line.strip_prefix(' ').unwrap_or(&doc_line));
                 } else {
                     // This is probably a macro doc from Rust 1.54, e.g. #[doc = include_str!(...)]
                     // Reset the string buffer, write that part, and then push this macro part too.
-                    parts.push(quote_spanned!(current_part_span.unwrap_or(Span::call_site()) => #current_part));
+                    parts.push(StrOrExpr::Str(take(&mut current_part)));
                     current_part.clear();
-                    parts.push(nv.value.to_token_stream());
+                    parts.push(StrOrExpr::Expr(nv.value.clone()));
                 }
             }
         }
     }
+    // Doc contained macro pieces - return as `concat!` expression
+    if !current_part.is_empty() {
+        parts.push(StrOrExpr::Str(current_part));
+    }
+    PythonDoc { parts }
+}
 
-    if !parts.is_empty() {
-        // Doc contained macro pieces - return as `concat!` expression
-        if !current_part.is_empty() {
-            parts.push(
-                quote_spanned!(current_part_span.unwrap_or(Span::call_site()) => #current_part),
-            );
+impl PythonDoc {
+    pub fn to_cstr_stream(&self, ctx: &Ctx) -> TokenStream {
+        let parts = &self.parts;
+        if let [StrOrExpr::Str(value)] = &parts[..] {
+            // Simple case, a single stream. We append a null bytes to get a valid C string
+            if let Ok(null_terminated_value) = CString::new(value.clone()) {
+                return null_terminated_value.into_token_stream();
+            } // We ignore the error here,  c_str! will report it
         }
-
-        let mut tokens = TokenStream::new();
-
-        syn::Ident::new("concat", Span::call_site()).to_tokens(&mut tokens);
-        syn::token::Not(Span::call_site()).to_tokens(&mut tokens);
-        syn::token::Bracket(Span::call_site()).surround(&mut tokens, |tokens| {
-            parts.to_tokens(tokens);
-            syn::token::Comma(Span::call_site()).to_tokens(tokens);
-        });
-
-        Ok(PythonDoc(PythonDocKind::Tokens(
-            quote!(#pyo3_path::ffi::c_str!(#tokens)),
-        )))
-    } else {
-        // Just a string doc - return directly with nul terminator
-        let docs = CString::new(current_part).map_err(|e| {
-            syn::Error::new(
-                current_part_span.unwrap_or(Span::call_site()),
-                format!(
-                    "Python doc may not contain nul byte, found nul at position {}",
-                    e.nul_position()
-                ),
-            )
-        })?;
-        Ok(PythonDoc(PythonDocKind::LitCStr(LitCStr::new(
-            docs,
-            current_part_span.unwrap_or(Span::call_site()),
-            ctx,
-        ))))
+        let Ctx { pyo3_path, .. } = ctx;
+        quote!(#pyo3_path::ffi::c_str!(concat!(#(#parts),*)))
     }
 }
 
-impl quote::ToTokens for PythonDoc {
+impl ToTokens for StrOrExpr {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        match &self.0 {
-            PythonDocKind::LitCStr(lit) => lit.to_tokens(tokens),
-            PythonDocKind::Tokens(toks) => toks.to_tokens(tokens),
+        match self {
+            Self::Str(s) => s.to_tokens(tokens),
+            Self::Expr(e) => e.to_tokens(tokens),
         }
     }
 }
@@ -273,17 +251,17 @@ pub enum PyO3CratePath {
 impl PyO3CratePath {
     pub fn to_tokens_spanned(&self, span: Span) -> TokenStream {
         match self {
-            Self::Given(path) => quote::quote_spanned! { span => #path },
-            Self::Default => quote::quote_spanned! {  span => ::pyo3 },
+            Self::Given(path) => quote_spanned! { span => #path },
+            Self::Default => quote_spanned! {  span => ::pyo3 },
         }
     }
 }
 
-impl quote::ToTokens for PyO3CratePath {
+impl ToTokens for PyO3CratePath {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         match self {
             Self::Given(path) => path.to_tokens(tokens),
-            Self::Default => quote::quote! { ::pyo3 }.to_tokens(tokens),
+            Self::Default => quote! { ::pyo3 }.to_tokens(tokens),
         }
     }
 }

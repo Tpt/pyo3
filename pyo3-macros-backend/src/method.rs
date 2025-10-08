@@ -902,6 +902,7 @@ impl<'a> FnSpec<'a> {
     pub fn get_methoddef(&self, wrapper: impl ToTokens, doc: &PythonDoc, ctx: &Ctx) -> TokenStream {
         let Ctx { pyo3_path, .. } = ctx;
         let python_name = self.null_terminated_python_name(ctx);
+        let doc = doc.to_cstr_stream(ctx);
         match self.convention {
             CallingConvention::Noargs => quote! {
                 #pyo3_path::impl_::pymethods::PyMethodDef::noargs(
@@ -976,11 +977,11 @@ impl<'a> FnSpec<'a> {
     }
 
     /// Forwards to [utils::get_doc] with the text signature of this spec.
-    pub fn get_doc(&self, attrs: &[syn::Attribute], ctx: &Ctx) -> syn::Result<PythonDoc> {
+    pub fn get_doc(&self, attrs: &[syn::Attribute]) -> PythonDoc {
         let text_signature = self
             .text_signature_call_signature()
             .map(|sig| format!("{}{}", self.python_name, sig));
-        utils::get_doc(attrs, text_signature, ctx)
+        utils::get_doc(attrs, text_signature)
     }
 
     /// Creates the parenthesised arguments list for `__text_signature__` snippet based on this spec's signature
