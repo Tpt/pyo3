@@ -180,6 +180,16 @@ pub fn get_doc(attrs: &[syn::Attribute], mut text_signature: Option<String>) -> 
 }
 
 impl PythonDoc {
+    #[cfg(feature = "experimental-inspect")]
+    pub fn to_str_stream(&self) -> TokenStream {
+        let parts = &self.parts;
+        if let [StrOrExpr::Str(value)] = &parts[..] {
+            // Simple case, a single stream. We append a null bytes to get a valid C string
+            return value.into_token_stream();
+        }
+        quote!(concat!(#(#parts),*))
+    }
+
     pub fn to_cstr_stream(&self, ctx: &Ctx) -> TokenStream {
         let parts = &self.parts;
         if let [StrOrExpr::Str(value)] = &parts[..] {

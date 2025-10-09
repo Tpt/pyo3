@@ -15,6 +15,7 @@ use crate::{
     pymethod::{
         self, is_proto_method, GeneratedPyMethod, MethodAndMethodDef, MethodAndSlotDef, PyMethod,
     },
+    utils,
 };
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
@@ -138,7 +139,12 @@ pub fn impl_methods(
                     check_pyfunction(&ctx.pyo3_path, meth)?;
                     let method = PyMethod::parse(&mut meth.sig, &mut meth.attrs, fun_options)?;
                     #[cfg(feature = "experimental-inspect")]
-                    extra_fragments.push(method_introspection_code(&method.spec, ty, ctx));
+                    extra_fragments.push(method_introspection_code(
+                        &method.spec,
+                        &meth.attrs,
+                        ty,
+                        ctx,
+                    ));
                     match pymethod::gen_py_method(ty, method, &meth.attrs, ctx)? {
                         GeneratedPyMethod::Method(MethodAndMethodDef {
                             associated_method,
@@ -192,6 +198,7 @@ pub fn impl_methods(
                             spec.python_name().to_string(),
                             expr_to_python(&konst.expr),
                             konst.ty.clone(),
+                            &utils::get_doc(&konst.attrs, None),
                             true,
                         ));
                     }
@@ -362,7 +369,12 @@ pub(crate) fn get_cfg_attributes(attrs: &[syn::Attribute]) -> Vec<&syn::Attribut
 }
 
 #[cfg(feature = "experimental-inspect")]
-fn method_introspection_code(spec: &FnSpec<'_>, parent: &syn::Type, ctx: &Ctx) -> TokenStream {
+fn method_introspection_code(
+    spec: &FnSpec<'_>,
+    attrs: &[syn::Attribute],
+    parent: &syn::Type,
+    ctx: &Ctx,
+) -> TokenStream {
     let Ctx { pyo3_path, .. } = ctx;
 
     let name = spec.python_name.to_string();
@@ -380,7 +392,7 @@ fn method_introspection_code(spec: &FnSpec<'_>, parent: &syn::Type, ctx: &Ctx) -
                 // We cant to keep the first argument type, hence this hack
                 spec.signature.arguments.pop();
                 spec.signature.python_signature.positional_parameters.pop();
-                method_introspection_code(&spec, parent, ctx)
+                method_introspection_code(&spec, attrs, parent, ctx)
             })
             .collect();
     }
@@ -438,6 +450,7 @@ fn method_introspection_code(spec: &FnSpec<'_>, parent: &syn::Type, ctx: &Ctx) -
         first_argument,
         output,
         decorators,
+        Some(&spec.get_doc(attrs)),
         Some(parent),
     )
 }

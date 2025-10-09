@@ -318,6 +318,7 @@ pub fn pymodule_module_impl(
                         item.ident.unraw().to_string(),
                         expr_to_python(&item.expr),
                         (*item.ty).clone(),
+                        &doc,
                         true,
                     );
                     introspection_chunks.push(quote! {
@@ -379,6 +380,7 @@ pub fn pymodule_module_impl(
         &name.to_string(),
         &module_items,
         &module_items_cfg_attrs,
+        &doc,
         pymodule_init.is_some(),
     );
     #[cfg(not(feature = "experimental-inspect"))]
@@ -466,7 +468,7 @@ pub fn pymodule_function_impl(
 
     #[cfg(feature = "experimental-inspect")]
     let introspection =
-        module_introspection_code(pyo3_path, &name.unraw().to_string(), &[], &[], true);
+        module_introspection_code(pyo3_path, &name.unraw().to_string(), &[], &[], &doc, true);
     #[cfg(not(feature = "experimental-inspect"))]
     let introspection = quote! {};
     #[cfg(feature = "experimental-inspect")]

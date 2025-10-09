@@ -6,6 +6,7 @@ pub struct Module {
     pub functions: Vec<Function>,
     pub attributes: Vec<Attribute>,
     pub incomplete: bool,
+    pub docstring: Option<String>,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
@@ -13,6 +14,7 @@ pub struct Class {
     pub name: String,
     pub methods: Vec<Function>,
     pub attributes: Vec<Attribute>,
+    pub docstring: Option<String>,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
@@ -23,6 +25,7 @@ pub struct Function {
     pub arguments: Arguments,
     /// return type
     pub returns: Option<String>,
+    pub docstring: Option<String>,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
@@ -32,6 +35,8 @@ pub struct Attribute {
     pub value: Option<String>,
     /// Type annotation as a Python expression
     pub annotation: Option<String>,
+    /// Docstring if it exists
+    pub docstring: Option<String>,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]

@@ -66,6 +66,7 @@ fn module_stubs(module: &Module) -> String {
                     kwarg: None,
                 },
                 returns: Some("_typeshed.Incomplete".into()),
+                docstring: None,
             },
             &mut modules_to_import,
         ));
@@ -336,6 +337,7 @@ mod tests {
                 }),
             },
             returns: Some("list[str]".into()),
+            docstring: None,
         };
         assert_eq!(
             "def func(posonly, /, arg, *varargs, karg: str, **kwarg: str) -> list[str]: ...",
@@ -368,6 +370,7 @@ mod tests {
                 kwarg: None,
             },
             returns: None,
+            docstring: None,
         };
         assert_eq!(
             "def afunc(posonly=1, /, arg=True, *, karg: str = \"foo\"): ...",

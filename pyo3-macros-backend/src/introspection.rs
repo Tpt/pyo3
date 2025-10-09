@@ -10,7 +10,7 @@
 
 use crate::method::{FnArg, RegularArg};
 use crate::pyfunction::FunctionSignature;
-use crate::utils::PyO3CratePath;
+use crate::utils::{PyO3CratePath, PythonDoc};
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, ToTokens};
 use std::borrow::Cow;
@@ -30,6 +30,7 @@ pub fn module_introspection_code<'a>(
     name: &str,
     members: impl IntoIterator<Item = &'a Ident>,
     members_cfg_attrs: impl IntoIterator<Item = &'a Vec<Attribute>>,
+    doc: &PythonDoc,
     incomplete: bool,
 ) -> TokenStream {
     IntrospectionNode::Map(
@@ -51,6 +52,7 @@ pub fn module_introspection_code<'a>(
                 ),
             ),
             ("incomplete", IntrospectionNode::Bool(incomplete)),
+            ("doc", IntrospectionNode::Doc(doc)),
         ]
         .into(),
     )
@@ -61,19 +63,20 @@ pub fn class_introspection_code(
     pyo3_crate_path: &PyO3CratePath,
     ident: &Ident,
     name: &str,
+    doc: Option<&PythonDoc>,
 ) -> TokenStream {
-    IntrospectionNode::Map(
-        [
-            ("type", IntrospectionNode::String("class".into())),
-            (
-                "id",
-                IntrospectionNode::IntrospectionId(Some(ident_to_type(ident))),
-            ),
-            ("name", IntrospectionNode::String(name.into())),
-        ]
-        .into(),
-    )
-    .emit(pyo3_crate_path)
+    let mut desc = HashMap::from([
+        ("type", IntrospectionNode::String("class".into())),
+        (
+            "id",
+            IntrospectionNode::IntrospectionId(Some(ident_to_type(ident))),
+        ),
+        ("name", IntrospectionNode::String(name.into())),
+    ]);
+    if let Some(doc) = &doc {
+        desc.insert("doc", IntrospectionNode::Doc(doc));
+    }
+    IntrospectionNode::Map(desc).emit(pyo3_crate_path)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -85,6 +88,7 @@ pub fn function_introspection_code(
     first_argument: Option<&'static str>,
     returns: ReturnType,
     decorators: impl IntoIterator<Item = String>,
+    doc: Option<&PythonDoc>,
     parent: Option<&Type>,
 ) -> TokenStream {
     let mut desc = HashMap::from([
@@ -138,6 +142,9 @@ pub fn function_introspection_code(
     if !decorators.is_empty() {
         desc.insert("decorators", IntrospectionNode::List(decorators));
     }
+    if let Some(doc) = doc {
+        desc.insert("doc", IntrospectionNode::Doc(doc));
+    }
     if let Some(parent) = parent {
         desc.insert(
             "parent",
@@ -153,6 +160,7 @@ pub fn attribute_introspection_code(
     name: String,
     value: String,
     mut rust_type: Type,
+    doc: &PythonDoc,
     is_final: bool,
 ) -> TokenStream {
     let mut desc = HashMap::from([
@@ -162,6 +170,7 @@ pub fn attribute_introspection_code(
             "parent",
             IntrospectionNode::IntrospectionId(parent.map(Cow::Borrowed)),
         ),
+        ("doc", IntrospectionNode::Doc(doc)),
     ]);
     if value == "..." {
         // We need to set a type, but not need to set the value to ..., all attributes have a value
@@ -345,6 +354,7 @@ enum IntrospectionNode<'a> {
     IntrospectionId(Option<Cow<'a, Type>>),
     InputType { rust_type: Type, nullable: bool },
     OutputType { rust_type: Type, is_final: bool },
+    Doc(&'a PythonDoc),
     Map(HashMap<&'static str, IntrospectionNode<'a>>),
     List(Vec<AttributedIntrospectionNode<'a>>),
 }
@@ -409,6 +419,12 @@ impl IntrospectionNode<'_> {
                 if is_final {
                     content.push_str("]");
                 }
+                content.push_str("\"");
+            }
+            Self::Doc(doc) => {
+                let doc = doc.to_str_stream();
+                content.push_str("\"");
+                content.push_tokens(quote!(#doc.as_bytes())); // TODO: escape
                 content.push_str("\"");
             }
             Self::Map(map) => {

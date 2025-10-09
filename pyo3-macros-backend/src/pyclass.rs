@@ -1531,6 +1531,7 @@ fn generate_protocol_slot(
                         Some("self"),
                         parse_quote!(-> #returns),
                         [],
+                        None,
                         Some(cls),
                     )
                 })
@@ -1837,12 +1838,12 @@ fn complex_enum_variant_field_getter<'a>(
 }
 
 fn descriptors_to_items(
-    cls: &syn::Ident,
+    cls: &Ident,
     rename_all: Option<&RenameAllAttribute>,
     frozen: Option<frozen>,
     field_options: Vec<(&syn::Field, FieldPyO3Options)>,
     ctx: &Ctx,
-) -> syn::Result<Vec<MethodAndMethodDef>> {
+) -> Result<Vec<MethodAndMethodDef>> {
     let ty = syn::parse_quote!(#cls);
     let mut items = Vec::new();
     for (field_index, (field, options)) in field_options.into_iter().enumerate() {
@@ -1880,6 +1881,7 @@ fn descriptors_to_items(
                     Some("self"),
                     parse_quote!(-> #return_type),
                     vec!["property".into()],
+                    Some(&utils::get_doc(&field.attrs, None)),
                     Some(&parse_quote!(#cls)),
                 ));
             }
@@ -1919,6 +1921,7 @@ fn descriptors_to_items(
                     Some("self"),
                     syn::ReturnType::Default,
                     vec![format!("{name}.setter")],
+                    Some(&utils::get_doc(&field.attrs, None)),
                     Some(&parse_quote!(#cls)),
                 ));
             }
@@ -2267,7 +2270,7 @@ struct PyClassImplsBuilder<'a> {
 
 impl<'a> PyClassImplsBuilder<'a> {
     fn new(
-        cls: &'a syn::Ident,
+        cls: &'a Ident,
         attr: &'a PyClassArgs,
         methods_type: PyClassMethodsType,
         default_methods: Vec<MethodAndMethodDef>,
@@ -2622,7 +2625,8 @@ impl<'a> PyClassImplsBuilder<'a> {
         let Ctx { pyo3_path, .. } = ctx;
         let name = get_class_python_name(self.cls, self.attr).to_string();
         let ident = self.cls;
-        let static_introspection = class_introspection_code(pyo3_path, ident, &name);
+        let static_introspection =
+            class_introspection_code(pyo3_path, ident, &name, self.doc.as_ref());
         let introspection_id = introspection_id_const();
         quote! {
             #static_introspection

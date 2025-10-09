@@ -382,8 +382,23 @@ pub fn impl_wrap_pyfunction(
         FunctionSignature::from_arguments(arguments)
     };
 
+    let spec = method::FnSpec {
+        tp,
+        name: &func.sig.ident,
+        convention: CallingConvention::from_signature(&signature),
+        python_name,
+        signature: signature.clone(),
+        text_signature,
+        asyncness: func.sig.asyncness,
+        unsafety: func.sig.unsafety,
+        warnings,
+        #[cfg(feature = "experimental-inspect")]
+        output: func.sig.output.clone(),
+    };
+
     let vis = &func.vis;
     let name = &func.sig.ident;
+    let doc = spec.get_doc(&func.attrs);
 
     #[cfg(feature = "experimental-inspect")]
     let introspection = function_introspection_code(
@@ -394,6 +409,7 @@ pub fn impl_wrap_pyfunction(
         None,
         func.sig.output.clone(),
         [] as [String; 0],
+        Some(&doc),
         None,
     );
     #[cfg(not(feature = "experimental-inspect"))]
@@ -403,20 +419,6 @@ pub fn impl_wrap_pyfunction(
     #[cfg(not(feature = "experimental-inspect"))]
     let introspection_id = quote! {};
 
-    let spec = method::FnSpec {
-        tp,
-        name: &func.sig.ident,
-        convention: CallingConvention::from_signature(&signature),
-        python_name,
-        signature,
-        text_signature,
-        asyncness: func.sig.asyncness,
-        unsafety: func.sig.unsafety,
-        warnings,
-        #[cfg(feature = "experimental-inspect")]
-        output: func.sig.output.clone(),
-    };
-
     let wrapper_ident = format_ident!("__pyfunction_{}", spec.name);
     if spec.asyncness.is_some() {
         ensure_spanned!(
@@ -425,7 +427,7 @@ pub fn impl_wrap_pyfunction(
         );
     }
     let wrapper = spec.get_wrapper_function(&wrapper_ident, None, ctx)?;
-    let methoddef = spec.get_methoddef(wrapper_ident, &spec.get_doc(&func.attrs), ctx);
+    let methoddef = spec.get_methoddef(wrapper_ident, &doc, ctx);
 
     let wrapped_pyfunction = quote! {
         // Create a module with the same name as the `#[pyfunction]` - this way `use <the function>`

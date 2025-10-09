@@ -47,6 +47,7 @@ fn parse_chunks(chunks: &[Chunk], main_module_name: &str) -> Result<Module> {
             id,
             name,
             members,
+            doc,
             incomplete,
         } = chunk
         {
@@ -56,6 +57,7 @@ fn parse_chunks(chunks: &[Chunk], main_module_name: &str) -> Result<Module> {
                     name,
                     members,
                     *incomplete,
+                    doc.as_deref(),
                     &chunks_by_id,
                     &chunks_by_parent,
                 );
@@ -70,6 +72,7 @@ fn convert_module(
     name: &str,
     members: &[String],
     incomplete: bool,
+    docstring: Option<&str>,
     chunks_by_id: &HashMap<&str, &Chunk>,
     chunks_by_parent: &HashMap<&str, Vec<&Chunk>>,
 ) -> Result<Module> {
@@ -89,6 +92,7 @@ fn convert_module(
         functions,
         attributes,
         incomplete,
+        docstring: docstring.map(Into::into),
     })
 }
 
@@ -111,19 +115,25 @@ fn convert_members<'a>(
                 id,
                 members,
                 incomplete,
+                doc,
             } => {
                 modules.push(convert_module(
                     id,
                     name,
                     members,
                     *incomplete,
+                    doc.as_deref(),
                     chunks_by_id,
                     chunks_by_parent,
                 )?);
             }
-            Chunk::Class { name, id } => {
-                classes.push(convert_class(id, name, chunks_by_id, chunks_by_parent)?)
-            }
+            Chunk::Class { name, id, doc } => classes.push(convert_class(
+                id,
+                name,
+                doc.as_deref(),
+                chunks_by_id,
+                chunks_by_parent,
+            )?),
             Chunk::Function {
                 name,
                 id: _,
@@ -131,14 +141,22 @@ fn convert_members<'a>(
                 parent: _,
                 decorators,
                 returns,
-            } => functions.push(convert_function(name, arguments, decorators, returns)),
+                doc,
+            } => functions.push(convert_function(
+                name,
+                arguments,
+                decorators,
+                returns,
+                doc.as_deref(),
+            )),
             Chunk::Attribute {
                 name,
                 id: _,
                 parent: _,
                 value,
                 annotation,
-            } => attributes.push(convert_attribute(name, value, annotation)),
+                doc,
+            } => attributes.push(convert_attribute(name, value, annotation, doc.as_deref())),
         }
     }
     // We sort elements to get a stable output
@@ -165,6 +183,7 @@ fn convert_members<'a>(
 fn convert_class(
     id: &str,
     name: &str,
+    docstring: Option<&str>,
     chunks_by_id: &HashMap<&str, &Chunk>,
     chunks_by_parent: &HashMap<&str, Vec<&Chunk>>,
 ) -> Result<Class> {
@@ -185,6 +204,7 @@ fn convert_class(
         name: name.into(),
         methods,
         attributes,
+        docstring: docstring.map(Into::into),
     })
 }
 
@@ -193,6 +213,7 @@ fn convert_function(
     arguments: &ChunkArguments,
     decorators: &[String],
     returns: &Option<String>,
+    docstring: Option<&str>,
 ) -> Function {
     Function {
         name: name.into(),
@@ -211,6 +232,7 @@ fn convert_function(
                 .map(convert_variable_length_argument),
         },
         returns: returns.clone(),
+        docstring: docstring.map(Into::into),
     }
 }
 
@@ -229,11 +251,17 @@ fn convert_variable_length_argument(arg: &ChunkArgument) -> VariableLengthArgume
     }
 }
 
-fn convert_attribute(name: &str, value: &Option<String>, annotation: &Option<String>) -> Attribute {
+fn convert_attribute(
+    name: &str,
+    value: &Option<String>,
+    annotation: &Option<String>,
+    docstring: Option<&str>,
+) -> Attribute {
     Attribute {
         name: name.into(),
         value: value.clone(),
         annotation: annotation.clone(),
+        docstring: docstring.map(Into::into),
     }
 }
 
@@ -373,11 +401,15 @@ enum Chunk {
         id: String,
         name: String,
         members: Vec<String>,
+        #[serde(default)]
+        doc: Option<String>,
         incomplete: bool,
     },
     Class {
         id: String,
         name: String,
+        #[serde(default)]
+        doc: Option<String>,
     },
     Function {
         #[serde(default)]
@@ -390,6 +422,8 @@ enum Chunk {
         decorators: Vec<String>,
         #[serde(default)]
         returns: Option<String>,
+        #[serde(default)]
+        doc: Option<String>,
     },
     Attribute {
         #[serde(default)]
@@ -401,6 +435,8 @@ enum Chunk {
         value: Option<String>,
         #[serde(default)]
         annotation: Option<String>,
+        #[serde(default)]
+        doc: Option<String>,
     },
 }
 
