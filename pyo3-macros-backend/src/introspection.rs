@@ -9,7 +9,8 @@
 //! type that is used to parse them.
 
 use crate::method::{FnArg, RegularArg};
-use crate::pyfunction::FunctionSignature;
+use crate::pyfunction::{FunctionSignature, SignatureTypeAnnotation};
+use crate::type_hint::PythonTypeHint;
 use crate::utils::PyO3CratePath;
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, ToTokens};
@@ -102,7 +103,7 @@ pub fn class_introspection_code(
     if is_final {
         desc.insert(
             "decorators",
-            IntrospectionNode::List(vec![IntrospectionNode::ConstantType(
+            IntrospectionNode::List(vec![IntrospectionNode::from(
                 PythonIdentifier::module_attr("typing", "final"),
             )
             .into()]),
@@ -136,7 +137,7 @@ pub fn function_introspection_code(
                 .as_ref()
                 .and_then(|attribute| attribute.value.returns.as_ref())
             {
-                IntrospectionNode::String(returns.to_python().into())
+                signature_type_introspection_node(returns)
             } else {
                 match returns {
                     ReturnType::Default => PythonIdentifier::builtins("None").into(),
@@ -280,7 +281,7 @@ fn arguments_introspection_data<'a>(
         };
         let mut params = HashMap::from([("name", IntrospectionNode::String(param.into()))]);
         if let Some(annotation) = &arg_desc.annotation {
-            params.insert("annotation", IntrospectionNode::String(annotation.into()));
+            params.insert("annotation", signature_type_introspection_node(annotation));
         }
         vararg = Some(IntrospectionNode::Map(params));
     }
@@ -298,7 +299,7 @@ fn arguments_introspection_data<'a>(
         };
         let mut params = HashMap::from([("name", IntrospectionNode::String(param.into()))]);
         if let Some(annotation) = &arg_desc.annotation {
-            params.insert("annotation", IntrospectionNode::String(annotation.into()));
+            params.insert("annotation", signature_type_introspection_node(annotation));
         }
         kwarg = Some(IntrospectionNode::Map(params));
     }
@@ -336,7 +337,7 @@ fn argument_introspection_data<'a>(
     }
 
     if let Some(annotation) = &desc.annotation {
-        params.insert("annotation", IntrospectionNode::String(annotation.into()));
+        params.insert("annotation", signature_type_introspection_node(annotation));
     } else if desc.from_py_with.is_none() {
         // If from_py_with is set we don't know anything on the input type
         let mut ty = desc.ty.clone();
@@ -349,13 +350,23 @@ fn argument_introspection_data<'a>(
     IntrospectionNode::Map(params).into()
 }
 
+fn signature_type_introspection_node(
+    annotation: &SignatureTypeAnnotation,
+) -> IntrospectionNode<'_> {
+    match annotation {
+        SignatureTypeAnnotation::String(s) => IntrospectionNode::String(s.value().into()),
+        SignatureTypeAnnotation::TypeHint(t) => IntrospectionNode::ConstantType(t),
+    }
+}
+
 enum IntrospectionNode<'a> {
     String(Cow<'a, str>),
     Bool(bool),
     IntrospectionId(Option<Cow<'a, Type>>),
     InputType(Type),
     OutputType { rust_type: Type, is_final: bool },
-    ConstantType(PythonIdentifier),
+    ConstantType(&'a PythonTypeHint),
+    ConstantPythonIdType(PythonIdentifier),
     Map(HashMap<&'static str, IntrospectionNode<'a>>),
     List(Vec<AttributedIntrospectionNode<'a>>),
 }
@@ -412,6 +423,12 @@ impl IntrospectionNode<'_> {
                 content.push_tokens(serialize_type_hint(annotation, pyo3_crate_path));
             }
             Self::ConstantType(hint) => {
+                content.push_tokens(serialize_type_hint(
+                    hint.to_introspection_token_stream(pyo3_crate_path),
+                    pyo3_crate_path,
+                ));
+            }
+            Self::ConstantPythonIdType(hint) => {
                 let name = &hint.name;
                 let annotation = if let Some(module) = &hint.module {
                     quote! { #pyo3_crate_path::inspect::TypeHint::module_attr(#module, #name) }
@@ -461,7 +478,7 @@ impl IntrospectionNode<'_> {
 
 impl From<PythonIdentifier> for IntrospectionNode<'static> {
     fn from(element: PythonIdentifier) -> Self {
-        Self::ConstantType(element)
+        Self::ConstantPythonIdType(element)
     }
 }
 

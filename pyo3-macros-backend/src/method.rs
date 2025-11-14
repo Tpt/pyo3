@@ -7,6 +7,8 @@ use quote::{format_ident, quote, quote_spanned, ToTokens};
 use syn::LitCStr;
 use syn::{ext::IdentExt, spanned::Spanned, Ident, Result};
 
+#[cfg(feature = "experimental-inspect")]
+use crate::pyfunction::SignatureTypeAnnotation;
 use crate::pyfunction::{PyFunctionWarning, WarningFactory};
 use crate::pyversions::is_abi3_before;
 use crate::utils::{expr_to_python, Ctx};
@@ -28,7 +30,7 @@ pub struct RegularArg<'a> {
     pub default_value: Option<syn::Expr>,
     pub option_wrapped_type: Option<&'a syn::Type>,
     #[cfg(feature = "experimental-inspect")]
-    pub annotation: Option<String>,
+    pub annotation: Option<SignatureTypeAnnotation>,
 }
 
 impl RegularArg<'_> {
@@ -59,7 +61,7 @@ pub struct VarargsArg<'a> {
     pub name: Cow<'a, syn::Ident>,
     pub ty: &'a syn::Type,
     #[cfg(feature = "experimental-inspect")]
-    pub annotation: Option<String>,
+    pub annotation: Option<SignatureTypeAnnotation>,
 }
 
 /// Pythons **kwarg argument
@@ -68,7 +70,7 @@ pub struct KwargsArg<'a> {
     pub name: Cow<'a, syn::Ident>,
     pub ty: &'a syn::Type,
     #[cfg(feature = "experimental-inspect")]
-    pub annotation: Option<String>,
+    pub annotation: Option<SignatureTypeAnnotation>,
 }
 
 #[derive(Clone, Debug)]

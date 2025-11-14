@@ -25,6 +25,7 @@ mod pyimpl;
 mod pymethod;
 mod pyversions;
 mod quotes;
+mod type_hint;
 
 pub use frompyobject::build_derive_from_pyobject;
 pub use intopyobject::build_derive_into_pyobject;

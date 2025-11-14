@@ -6,7 +6,7 @@ use quote::{format_ident, quote, quote_spanned, ToTokens};
 use syn::ext::IdentExt;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
-use syn::{parse_quote, parse_quote_spanned, spanned::Spanned, ImplItemFn, Result, Token};
+use syn::{parse_quote, parse_quote_spanned, spanned::Spanned, ImplItemFn, LitStr, Result, Token};
 
 use crate::attributes::kw::frozen;
 use crate::attributes::{
@@ -20,9 +20,9 @@ use crate::introspection::{
 };
 use crate::konst::{ConstAttributes, ConstSpec};
 use crate::method::{FnArg, FnSpec, PyArg, RegularArg};
-use crate::pyfunction::ConstructorAttribute;
 #[cfg(feature = "experimental-inspect")]
 use crate::pyfunction::FunctionSignature;
+use crate::pyfunction::{ConstructorAttribute, SignatureTypeAnnotation};
 use crate::pyimpl::{gen_py_const, get_cfg_attributes, PyClassMethodsType};
 #[cfg(feature = "experimental-inspect")]
 use crate::pymethod::field_python_name;
@@ -2108,14 +2108,14 @@ fn pyclass_richcmp_simple_enum(
                     from_py_with: None,
                     default_value: None,
                     option_wrapped_type: None,
-                    annotation: Some(match (options.eq.is_some(), options.eq_int.is_some()) {
-                        (true, true) => {
-                            format!("{class_name} | int")
-                        }
-                        (true, false) => class_name.into(),
-                        (false, true) => "int".into(),
-                        (false, false) => unreachable!(),
-                    }),
+                    annotation: Some(SignatureTypeAnnotation::String(
+                        match (options.eq.is_some(), options.eq_int.is_some()) {
+                            (true, true) => LitStr::new(&format!("{class_name} | int"), cls.span()),
+                            (true, false) => LitStr::new(class_name, cls.span()),
+                            (false, true) => LitStr::new("int", cls.span()),
+                            (false, false) => unreachable!(),
+                        },
+                    )),
                 })],
                 returns: parse_quote! { ::std::primitive::bool },
             },

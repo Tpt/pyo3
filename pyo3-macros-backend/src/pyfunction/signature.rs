@@ -1,3 +1,4 @@
+use crate::type_hint::PythonTypeHint;
 use crate::{
     attributes::{kw, KeywordAttribute},
     method::{FnArg, RegularArg},
@@ -16,7 +17,7 @@ use syn::{
 pub struct Signature {
     paren_token: syn::token::Paren,
     pub items: Punctuated<SignatureItem, Token![,]>,
-    pub returns: Option<(Token![->], PyTypeAnnotation)>,
+    pub returns: Option<(Token![->], SignatureTypeAnnotation)>,
 }
 
 impl Parse for Signature {
@@ -51,7 +52,7 @@ impl ToTokens for Signature {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SignatureItemArgument {
     pub ident: syn::Ident,
-    pub colon_and_annotation: Option<(Token![:], PyTypeAnnotation)>,
+    pub colon_and_annotation: Option<(Token![:], SignatureTypeAnnotation)>,
     pub eq_and_default: Option<(Token![=], syn::Expr)>,
 }
 
@@ -69,14 +70,14 @@ pub struct SignatureItemVarargsSep {
 pub struct SignatureItemVarargs {
     pub sep: SignatureItemVarargsSep,
     pub ident: syn::Ident,
-    pub colon_and_annotation: Option<(Token![:], PyTypeAnnotation)>,
+    pub colon_and_annotation: Option<(Token![:], SignatureTypeAnnotation)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SignatureItemKwargs {
     pub asterisks: (Token![*], Token![*]),
     pub ident: syn::Ident,
-    pub colon_and_annotation: Option<(Token![:], PyTypeAnnotation)>,
+    pub colon_and_annotation: Option<(Token![:], SignatureTypeAnnotation)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -234,23 +235,23 @@ impl ToTokens for SignatureItemPosargsSep {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PyTypeAnnotation(syn::LitStr);
+pub enum SignatureTypeAnnotation {
+    String(syn::LitStr),
+    TypeHint(PythonTypeHint),
+}
 
-impl Parse for PyTypeAnnotation {
+impl Parse for SignatureTypeAnnotation {
     fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
-        Ok(Self(input.parse()?))
+        Ok(Self::String(input.parse()?))
     }
 }
 
-impl ToTokens for PyTypeAnnotation {
+impl ToTokens for SignatureTypeAnnotation {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        self.0.to_tokens(tokens);
-    }
-}
-
-impl PyTypeAnnotation {
-    pub fn to_python(&self) -> String {
-        self.0.value()
+        match self {
+            Self::String(s) => s.to_tokens(tokens),
+            Self::TypeHint(t) => t.to_tokens(tokens),
+        }
     }
 }
 
@@ -495,7 +496,7 @@ impl<'a> FunctionSignature<'a> {
                         );
                         #[cfg(feature = "experimental-inspect")]
                         {
-                            fn_arg.annotation = Some(annotation.to_python());
+                            fn_arg.annotation = Some(annotation.clone());
                         }
                     }
                 }
@@ -520,7 +521,7 @@ impl<'a> FunctionSignature<'a> {
                                 once, this has to be a regular argument."
                                 );
                             };
-                            fn_arg.annotation = Some(annotation.to_python());
+                            fn_arg.annotation = Some(annotation.clone());
                         }
                     }
                 }
@@ -542,7 +543,7 @@ impl<'a> FunctionSignature<'a> {
                                 once, this has to be a regular argument."
                                 );
                             };
-                            fn_arg.annotation = Some(annotation.to_python());
+                            fn_arg.annotation = Some(annotation.clone());
                         }
                     }
                 }
@@ -564,7 +565,7 @@ impl<'a> FunctionSignature<'a> {
         Ok(FunctionSignature {
             arguments,
             python_signature,
-            attribute: Some(attribute),
+            attribute: Some(attribute.clone()),
         })
     }
 
