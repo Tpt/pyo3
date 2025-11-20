@@ -6,7 +6,7 @@ use quote::{format_ident, quote, quote_spanned, ToTokens};
 use syn::ext::IdentExt;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
-use syn::{parse_quote, parse_quote_spanned, spanned::Spanned, ImplItemFn, LitStr, Result, Token};
+use syn::{parse_quote, parse_quote_spanned, spanned::Spanned, ImplItemFn, Result, Token};
 
 use crate::attributes::kw::frozen;
 use crate::attributes::{
@@ -16,13 +16,15 @@ use crate::attributes::{
 use crate::combine_errors::CombineErrors;
 #[cfg(feature = "experimental-inspect")]
 use crate::introspection::{
-    class_introspection_code, function_introspection_code, introspection_id_const, PythonIdentifier,
+    class_introspection_code, function_introspection_code, introspection_id_const,
 };
 use crate::konst::{ConstAttributes, ConstSpec};
 use crate::method::{FnArg, FnSpec, PyArg, RegularArg};
+use crate::pyfunction::ConstructorAttribute;
 #[cfg(feature = "experimental-inspect")]
 use crate::pyfunction::FunctionSignature;
-use crate::pyfunction::{ConstructorAttribute, SignatureTypeAnnotation};
+#[cfg(feature = "experimental-inspect")]
+use crate::pyfunction::SignatureTypeAnnotation;
 use crate::pyimpl::{gen_py_const, get_cfg_attributes, PyClassMethodsType};
 #[cfg(feature = "experimental-inspect")]
 use crate::pymethod::field_python_name;
@@ -32,6 +34,8 @@ use crate::pymethod::{
     __REPR__, __RICHCMP__, __STR__,
 };
 use crate::pyversions::{is_abi3_before, is_py_before};
+#[cfg(feature = "experimental-inspect")]
+use crate::type_hint::{PythonIdentifier, PythonTypeHint};
 use crate::utils::{self, apply_renaming_rule, Ctx, PythonDoc};
 use crate::PyFunctionOptions;
 
@@ -1004,14 +1008,8 @@ fn impl_simple_enum(
         (int_impl, int_slot)
     };
 
-    let (default_richcmp, default_richcmp_slot) = pyclass_richcmp_simple_enum(
-        &args.options,
-        &ty,
-        repr_type,
-        #[cfg(feature = "experimental-inspect")]
-        &get_class_python_name(cls, args).to_string(),
-        ctx,
-    )?;
+    let (default_richcmp, default_richcmp_slot) =
+        pyclass_richcmp_simple_enum(&args.options, &ty, repr_type, ctx)?;
     let (default_hash, default_hash_slot) = pyclass_hash(&args.options, &ty, ctx)?;
 
     let mut default_slots = vec![default_repr_slot, default_int_slot];
@@ -1897,7 +1895,7 @@ fn descriptors_to_items(
                     &FunctionSignature::from_arguments(vec![]),
                     Some("self"),
                     parse_quote!(-> #return_type),
-                    vec![PythonIdentifier::builtins("property")],
+                    vec![PythonIdentifier::builtin("property")],
                     Some(&parse_quote!(#cls)),
                 ));
             }
@@ -2039,7 +2037,6 @@ fn pyclass_richcmp_simple_enum(
     options: &PyClassPyO3Options,
     cls: &syn::Type,
     repr_type: &syn::Ident,
-    #[cfg(feature = "experimental-inspect")] class_name: &str,
     ctx: &Ctx,
 ) -> Result<(Option<syn::ImplItemFn>, Option<MethodAndSlotDef>)> {
     let Ctx { pyo3_path, .. } = ctx;
@@ -2108,11 +2105,20 @@ fn pyclass_richcmp_simple_enum(
                     from_py_with: None,
                     default_value: None,
                     option_wrapped_type: None,
-                    annotation: Some(SignatureTypeAnnotation::String(
+                    annotation: Some(SignatureTypeAnnotation::TypeHint(
                         match (options.eq.is_some(), options.eq_int.is_some()) {
-                            (true, true) => LitStr::new(&format!("{class_name} | int"), cls.span()),
-                            (true, false) => LitStr::new(class_name, cls.span()),
-                            (false, true) => LitStr::new("int", cls.span()),
+                            (true, true) => PythonTypeHint::union([
+                                PythonIdentifier::from_argument_type(
+                                    parse_quote!(&#cls),
+                                    Some(cls),
+                                ),
+                                PythonIdentifier::builtin("int"),
+                            ]),
+                            (true, false) => {
+                                PythonIdentifier::from_argument_type(parse_quote!(&#cls), Some(cls))
+                                    .into()
+                            }
+                            (false, true) => PythonIdentifier::builtin("int").into(),
                             (false, false) => unreachable!(),
                         },
                     )),

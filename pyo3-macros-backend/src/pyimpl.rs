@@ -2,11 +2,11 @@ use std::collections::HashSet;
 
 use crate::combine_errors::CombineErrors;
 #[cfg(feature = "experimental-inspect")]
-use crate::introspection::{
-    attribute_introspection_code, function_introspection_code, PythonIdentifier,
-};
+use crate::introspection::{attribute_introspection_code, function_introspection_code};
 #[cfg(feature = "experimental-inspect")]
 use crate::method::{FnSpec, FnType};
+#[cfg(feature = "experimental-inspect")]
+use crate::type_hint::PythonIdentifier;
 #[cfg(feature = "experimental-inspect")]
 use crate::utils::expr_to_python;
 use crate::utils::{has_attribute, has_attribute_with_namespace, Ctx, PyO3CratePath};
@@ -401,7 +401,7 @@ fn method_introspection_code(spec: &FnSpec<'_>, parent: &syn::Type, ctx: &Ctx) -
     match &spec.tp {
         FnType::Getter(_) => {
             first_argument = Some("self");
-            decorators.push(PythonIdentifier::builtins("property"));
+            decorators.push(PythonIdentifier::builtin("property"));
         }
         FnType::Setter(_) => {
             first_argument = Some("self");
@@ -414,12 +414,12 @@ fn method_introspection_code(spec: &FnSpec<'_>, parent: &syn::Type, ctx: &Ctx) -
             first_argument = Some("cls");
             if spec.python_name != "__new__" {
                 // special case __new__ - does not get the decorator
-                decorators.push(PythonIdentifier::builtins("classmethod"));
+                decorators.push(PythonIdentifier::builtin("classmethod"));
             }
         }
         FnType::FnStatic => {
             if spec.python_name != "__new__" {
-                decorators.push(PythonIdentifier::builtins("staticmethod"));
+                decorators.push(PythonIdentifier::builtin("staticmethod"));
             } else {
                 // special case __new__ - does not get the decorator and gets first argument
                 first_argument = Some("cls");
@@ -429,8 +429,8 @@ fn method_introspection_code(spec: &FnSpec<'_>, parent: &syn::Type, ctx: &Ctx) -
         FnType::ClassAttribute => {
             first_argument = Some("cls");
             // TODO: this combination only works with Python 3.9-3.11 https://docs.python.org/3.11/library/functions.html#classmethod
-            decorators.push(PythonIdentifier::builtins("classmethod"));
-            decorators.push(PythonIdentifier::builtins("property"));
+            decorators.push(PythonIdentifier::builtin("classmethod"));
+            decorators.push(PythonIdentifier::builtin("property"));
         }
     }
     let return_type = if spec.python_name == "__new__" {
